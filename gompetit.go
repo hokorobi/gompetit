@@ -15,37 +15,34 @@ import (
 	"golang.org/x/text/transform"
 )
 
-var (
-	parallel    int
-	args        []string
-	cmd         string
-	extsStr     string
-	exts        []string
-	isRecursive bool
-)
-
 func transformEncoding(rawReader io.Reader, trans transform.Transformer) string {
 	ret, _ := ioutil.ReadAll(transform.NewReader(rawReader, trans))
 	return string(ret)
 }
 
-func FromShiftJIS(str string) string {
+func fromShiftJIS(str string) string {
 	return transformEncoding(strings.NewReader(str), japanese.ShiftJIS.NewDecoder())
 }
 
-func execFunc(path string, limit chan bool, stdout chan string, wg *sync.WaitGroup) {
-	defer func() {
-		wg.Done()
-		<-limit
-	}()
-	stdout <- fmt.Sprintf("start: %s %s %s", cmd, strings.Join(args, " "), path)
+func startWalker(q chan string, stdout chan string, wg *sync.WaitGroup, cmd string, args []string) {
+	defer wg.Done()
 
-	out, err := exec.Command(cmd, append(args, path)...).Output()
-	var str = fmt.Sprintf("done: %s", path) + "\n" + FromShiftJIS(string(out))
-	if err != nil {
-		str = str + "\n" + fmt.Sprintf("%v", err)
+	for {
+		path, ok := <-q
+		if !ok {
+			return
+		}
+
+		arg := append(args, path)
+		stdout <- fmt.Sprintf("start: %s %s", cmd, strings.Join(arg, " "))
+
+		out, err := exec.Command(cmd, arg...).Output()
+		var str = fmt.Sprintf("done: %s", path) + "\n" + fromShiftJIS(string(out))
+		if err != nil {
+			str = str + "\n" + fmt.Sprintf("%v", err)
+		}
+		stdout <- str
 	}
-	stdout <- str
 }
 
 func matchExts(path string, exts []string) bool {
@@ -57,38 +54,58 @@ func matchExts(path string, exts []string) bool {
 	return false
 }
 
-func execWalkFunc(limit chan bool, stdout chan string, wg *sync.WaitGroup) filepath.WalkFunc {
+func execWalkFunc(q chan string, exts []string) filepath.WalkFunc {
 	return func(path string, info os.FileInfo, err error) error {
 		if info.IsDir() {
 			return nil
 		}
 		if exts == nil || matchExts(path, exts) {
-			limit <- true
-			wg.Add(1)
-			go execFunc(path, limit, stdout, wg)
-			return nil
+			q <- path
 		}
 		return nil
 	}
 }
 
-func execRecursivFile(dirs []string, stdout chan string, wg *sync.WaitGroup) {
-	limit := make(chan bool, parallel)
+func queueRecursiveFile(q chan string, dirs []string, exts []string) {
 	for _, dir := range dirs {
-		err := filepath.Walk(dir, execWalkFunc(limit, stdout, wg))
+		err := filepath.Walk(dir, execWalkFunc(q, exts))
 		if err != nil {
 			fmt.Println(err)
 		}
 	}
 }
 
-func execPath(paths []string, stdout chan string, wg *sync.WaitGroup) {
-	limit := make(chan bool, parallel)
+func queuePath(q chan string, paths []string) {
 	for _, path := range paths {
-		limit <- true
-		wg.Add(1)
-		go execFunc(path, limit, stdout, wg)
+		q <- path
 	}
+}
+
+func getExts(str string) []string {
+	var exts []string
+
+	if str == "" {
+		exts = nil
+	} else {
+		exts = strings.Split(strings.ToLower(str), ",")
+		for i, ext := range exts {
+			exts[i] = "." + ext
+		}
+	}
+	return exts
+}
+
+func getPaths(strs []string) []string {
+	var paths []string
+
+	for _, path := range strs {
+		if _, err := os.Stat(path); err != nil {
+			fmt.Println("Stat err ", path, ": ", err)
+			continue
+		}
+		paths = append(paths, path)
+	}
+	return paths
 }
 
 func main() {
@@ -96,6 +113,11 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Usage: %s [OPTIONS] cmd \"cmdargs\" path...\nOPTIONS:\n", os.Args[0])
 		flag.PrintDefaults()
 	}
+	var (
+		parallel    int
+		isRecursive bool
+		extsStr     string
+	)
 	flag.IntVar(&parallel, "P", 2, "同時実行数")
 	flag.BoolVar(&isRecursive, "r", false, "path のディレクトリを辿ってファイルを対象とする。")
 	flag.StringVar(&extsStr, "e", "", "-r を指定した場合に処理対象のファイル拡張子を指定。, で複数指定（スペースは挟まない）。例: -e png,jpg")
@@ -106,51 +128,36 @@ func main() {
 		flag.Usage()
 		os.Exit(1)
 	}
-	cmd = flag.Arg(0)
-	args = strings.Fields(flag.Arg(1))
-	if extsStr == "" {
-		exts = nil
-	} else {
-		exts = strings.Split(strings.ToLower(extsStr), ",")
-		for i, ext := range exts {
-			exts[i] = "." + ext
-		}
-	}
+	cmd := flag.Arg(0)
+	args := strings.Fields(flag.Arg(1))
+	exts := getExts(extsStr)
+	paths := getPaths(flag.Args()[2:])
 
-	var paths []string
-	for _, path := range flag.Args()[2:] {
-		if _, err := os.Stat(path); err != nil {
-			fmt.Println("Stat err ", path, ": ", err)
-			continue
-		}
-		paths = append(paths, path)
-	}
-
-	workerquit := make(chan bool)
-	taskquit := make(chan bool)
 	stdout := make(chan string)
-
 	go func() {
-	loop:
 		for {
-			select {
-			case <-taskquit:
-				workerquit <- true
-				break loop
-			case s := <-stdout:
-				fmt.Println(s)
+			str, ok := <-stdout
+			if !ok {
+				return
 			}
+
+			fmt.Println(str)
 		}
 	}()
 
 	var wg sync.WaitGroup
-	if isRecursive {
-		execRecursivFile(paths, stdout, &wg)
-	} else {
-		execPath(paths, stdout, &wg)
+	q := make(chan string)
+	for i := 0; i < parallel; i++ {
+		wg.Add(1)
+		go startWalker(q, stdout, &wg, cmd, args)
 	}
-	wg.Wait()
-	taskquit <- true
 
-	<-workerquit
+	if isRecursive {
+		queueRecursiveFile(q, paths, exts)
+	} else {
+		queuePath(q, paths)
+	}
+	close(q)
+	wg.Wait()
+	close(stdout)
 }
