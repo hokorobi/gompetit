@@ -45,6 +45,35 @@ func startWalker(q chan string, stdout chan string, wg *sync.WaitGroup, cmd stri
 	}
 }
 
+func startWalkerCwd(q chan string, stdout chan string, wg *sync.WaitGroup, cmd string, args []string) {
+	defer wg.Done()
+
+	var str string
+	for {
+		path, ok := <-q
+		if !ok {
+			return
+		}
+
+		err := os.Chdir(path)
+		stdout <- path
+		if err != nil {
+			stdout <- fmt.Sprintf("%v", err)
+			return
+		}
+
+		arg := args
+		stdout <- fmt.Sprintf("start: %s %s", cmd, strings.Join(arg, " "))
+
+		out, err := exec.Command(cmd, arg...).Output()
+		str = fmt.Sprintf("done: %s", path) + "\n" + fromShiftJIS(string(out))
+		if err != nil {
+			str = str + "\n" + fmt.Sprintf("%v", err)
+		}
+		stdout <- str
+	}
+}
+
 func matchExts(path string, exts []string) bool {
 	for _, ext := range exts {
 		if strings.ToLower(filepath.Ext(path)) == ext {
@@ -66,9 +95,33 @@ func execWalkFunc(q chan string, exts []string) filepath.WalkFunc {
 	}
 }
 
+func execWalkFuncDir(q chan string) filepath.WalkFunc {
+	return func(path string, info os.FileInfo, err error) error {
+		if info.IsDir() {
+			q <- path
+		}
+		return nil
+	}
+}
+
 func queueRecursiveFile(q chan string, dirs []string, exts []string) {
 	for _, dir := range dirs {
 		err := filepath.Walk(dir, execWalkFunc(q, exts))
+		if err != nil {
+			fmt.Println(err)
+		}
+	}
+}
+
+func queueRecursiveDir(q chan string, dirs []string) {
+	for _, dir := range dirs {
+		path, err := filepath.Abs(dir)
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+
+		err = filepath.Walk(path, execWalkFuncDir(q))
 		if err != nil {
 			fmt.Println(err)
 		}
@@ -117,10 +170,14 @@ func main() {
 		parallel    int
 		isRecursive bool
 		extsStr     string
+		isDir       bool
+		isCwd       bool
 	)
 	flag.IntVar(&parallel, "P", 2, "同時実行数")
 	flag.BoolVar(&isRecursive, "r", false, "path のディレクトリを辿ってファイルを対象とする。")
 	flag.StringVar(&extsStr, "e", "", "-r を指定した場合に処理対象のファイル拡張子を指定。, で複数指定（スペースは挟まない）。例: -e png,jpg")
+	flag.BoolVar(&isDir, "d", false, "-r を指定した場合にディレクトリを処理対象とする。")
+	flag.BoolVar(&isCwd, "c", false, "-r と -d を指定した場合に見つけたディレクトリをカレントディレクトリとして処理を実行する。")
 
 	flag.Parse()
 
@@ -149,11 +206,19 @@ func main() {
 	q := make(chan string)
 	for i := 0; i < parallel; i++ {
 		wg.Add(1)
-		go startWalker(q, stdout, &wg, cmd, args)
+		if isCwd {
+			go startWalkerCwd(q, stdout, &wg, cmd, args)
+		} else {
+			go startWalker(q, stdout, &wg, cmd, args)
+		}
 	}
 
 	if isRecursive {
-		queueRecursiveFile(q, paths, exts)
+		if isDir {
+			queueRecursiveDir(q, paths)
+		} else {
+			queueRecursiveFile(q, paths, exts)
+		}
 	} else {
 		queuePath(q, paths)
 	}
