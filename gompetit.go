@@ -108,15 +108,13 @@ func queuePath(q chan string, paths []string) {
 }
 
 func getExts(str string) []string {
-	var exts []string
-
 	if str == "" {
-		exts = nil
-	} else {
-		exts = strings.Split(strings.ToLower(str), ",")
-		for i, ext := range exts {
-			exts[i] = "." + ext
-		}
+		return nil
+	}
+
+	exts := strings.Split(strings.ToLower(str), ",")
+	for i, ext := range exts {
+		exts[i] = "." + ext
 	}
 	return exts
 }
