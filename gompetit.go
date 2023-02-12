@@ -87,7 +87,7 @@ func execWalkFuncDir(q chan string) filepath.WalkFunc {
 }
 
 func queue(q chan string, dirs []string, exts []string, isRecursive bool, isDir bool) {
-	if isRecursive {
+	if !isRecursive {
 		for _, path := range dirs {
 			q <- path
 		}
