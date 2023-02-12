@@ -87,18 +87,14 @@ func execWalkFuncDir(q chan string) filepath.WalkFunc {
 	}
 }
 
-func queueRecursiveFile(q chan string, dirs []string, exts []string) {
+func queueRecursive(q chan string, dirs []string, exts []string, isDir bool) {
+	var err error
 	for _, dir := range dirs {
-		err := filepath.Walk(dir, execWalkFunc(q, exts))
-		if err != nil {
-			fmt.Println(err)
+		if isDir {
+			err = filepath.Walk(dir, execWalkFuncDir(q))
+		} else {
+			err = filepath.Walk(dir, execWalkFunc(q, exts))
 		}
-	}
-}
-
-func queueRecursiveDir(q chan string, dirs []string) {
-	for _, dir := range dirs {
-		err := filepath.Walk(dir, execWalkFuncDir(q))
 		if err != nil {
 			fmt.Println(err)
 		}
@@ -183,11 +179,7 @@ func main() {
 	}
 
 	if isRecursive {
-		if isDir {
-			queueRecursiveDir(q, paths)
-		} else {
-			queueRecursiveFile(q, paths, exts)
-		}
+		queueRecursive(q, paths, exts, isDir)
 	} else {
 		queuePath(q, paths)
 	}
