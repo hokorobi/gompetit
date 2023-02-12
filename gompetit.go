@@ -188,5 +188,6 @@ func main() {
 
 	// FIXME: 最後の stdout への出力が捨てられてしまう。
 	// stdout から取得する前に close している？
+	time.Sleep(time.Second * 1)
 	close(stdout)
 }
