@@ -47,9 +47,9 @@ func execCmd(q chan string, stdout chan string, wg *sync.WaitGroup, cmd string, 
 		out, err := exec.Command(cmd, arg...).CombinedOutput()
 		if err != nil {
 			// err だと out が空になるわけではなかった。
-			stdout <- fmt.Sprintf("%s: %s", prefix, fromShiftJIS(string(out)))
 			stdout <- fmt.Sprintf("%s: %v", prefix, err)
-		} else {
+		}
+		if len(out) > 0 {
 			stdout <- fmt.Sprintf("%s: %s", prefix, fromShiftJIS(string(out)))
 		}
 		stdout <- fmt.Sprintf("done %s: %s", time.Now().Format("15:04:05"), path)
