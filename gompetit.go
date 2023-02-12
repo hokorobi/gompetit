@@ -168,7 +168,7 @@ func main() {
 	exts := getExts(extsStr)
 	paths := getPaths(flag.Args()[2:])
 
-	stdout := make(chan string)
+	stdout := make(chan string, 100)
 	go func() {
 		for str := range stdout {
 			fmt.Println(str)
@@ -176,7 +176,7 @@ func main() {
 	}()
 
 	wg := new(sync.WaitGroup)
-	q := make(chan string)
+	q := make(chan string, 100)
 	for i := 0; i < parallel; i++ {
 		wg.Add(1)
 		go startWalker(q, stdout, wg, cmd, args, isCwd)
