@@ -24,53 +24,35 @@ func fromShiftJIS(str string) string {
 	return transformEncoding(strings.NewReader(str), japanese.ShiftJIS.NewDecoder())
 }
 
-func startWalker(q chan string, stdout chan string, wg *sync.WaitGroup, cmd string, args []string) {
+func startWalker(q chan string, stdout chan string, wg *sync.WaitGroup, cmd string, args []string, isCwd bool) {
 	defer wg.Done()
 
-	for {
-		path, ok := <-q
-		if !ok {
-			return
+	for path := range q {
+		var arg []string
+		if isCwd {
+			err := os.Chdir(path)
+			if err != nil {
+				stdout <- fmt.Sprintf("%v", err)
+				continue
+			}
+			arg = args
+		} else {
+			arg = append(args, path)
 		}
 
-		arg := append(args, path)
-		stdout <- fmt.Sprintf("start: %s %s", cmd, strings.Join(arg, " "))
+		stdout <- fmt.Sprintf("start: %s", path)
+		prefix := filepath.Base(path)
 
-		out, err := exec.Command(cmd, arg...).Output()
-		var str = fmt.Sprintf("done: %s", path) + "\n" + fromShiftJIS(string(out))
+		execCmd := exec.Command(cmd, arg...)
+		out, err := execCmd.CombinedOutput()
 		if err != nil {
-			str = str + "\n" + fmt.Sprintf("%v", err)
+			// err だと out が空になるわけではなかった。
+			stdout <- fmt.Sprintf("%s: %s", prefix, fromShiftJIS(string(out)))
+			stdout <- fmt.Sprintf("%s: %v", prefix, err)
+		} else {
+			stdout <- fmt.Sprintf("%s: %s", prefix, fromShiftJIS(string(out)))
 		}
-		stdout <- str
-	}
-}
-
-func startWalkerCwd(q chan string, stdout chan string, wg *sync.WaitGroup, cmd string, args []string) {
-	defer wg.Done()
-
-	var str string
-	for {
-		path, ok := <-q
-		if !ok {
-			return
-		}
-
-		err := os.Chdir(path)
-		stdout <- path
-		if err != nil {
-			stdout <- fmt.Sprintf("%v", err)
-			return
-		}
-
-		arg := args
-		stdout <- fmt.Sprintf("start: %s %s", cmd, strings.Join(arg, " "))
-
-		out, err := exec.Command(cmd, arg...).Output()
-		str = fmt.Sprintf("done: %s", path) + "\n" + fromShiftJIS(string(out))
-		if err != nil {
-			str = str + "\n" + fmt.Sprintf("%v", err)
-		}
-		stdout <- str
+		stdout <- fmt.Sprintf("done: %s", path)
 	}
 }
 
@@ -187,25 +169,16 @@ func main() {
 
 	stdout := make(chan string)
 	go func() {
-		for {
-			str, ok := <-stdout
-			if !ok {
-				return
-			}
-
+		for str := range stdout {
 			fmt.Println(str)
 		}
 	}()
 
-	var wg sync.WaitGroup
+	wg := new(sync.WaitGroup)
 	q := make(chan string)
 	for i := 0; i < parallel; i++ {
 		wg.Add(1)
-		if isCwd {
-			go startWalkerCwd(q, stdout, &wg, cmd, args)
-		} else {
-			go startWalker(q, stdout, &wg, cmd, args)
-		}
+		go startWalker(q, stdout, wg, cmd, args, isCwd)
 	}
 
 	if isRecursive {
@@ -219,5 +192,8 @@ func main() {
 	}
 	close(q)
 	wg.Wait()
+
+	// FIXME: 最後の stdout への出力が捨てられてしまう。
+	// stdout から取得する前に close している？
 	close(stdout)
 }
