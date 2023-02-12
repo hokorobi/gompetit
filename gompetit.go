@@ -115,13 +115,7 @@ func queueRecursiveFile(q chan string, dirs []string, exts []string) {
 
 func queueRecursiveDir(q chan string, dirs []string) {
 	for _, dir := range dirs {
-		path, err := filepath.Abs(dir)
-		if err != nil {
-			fmt.Println(err)
-			return
-		}
-
-		err = filepath.Walk(path, execWalkFuncDir(q))
+		err := filepath.Walk(dir, execWalkFuncDir(q))
 		if err != nil {
 			fmt.Println(err)
 		}
@@ -151,9 +145,10 @@ func getExts(str string) []string {
 func getPaths(strs []string) []string {
 	var paths []string
 
-	for _, path := range strs {
-		if _, err := os.Stat(path); err != nil {
-			fmt.Println("Stat err ", path, ": ", err)
+	for _, str := range strs {
+		path, err := filepath.Abs(str)
+		if err != nil {
+			fmt.Println("Abs err ", str, ": ", err)
 			continue
 		}
 		paths = append(paths, path)
