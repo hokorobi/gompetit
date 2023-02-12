@@ -25,7 +25,7 @@ func fromShiftJIS(str string) string {
 	return transformEncoding(strings.NewReader(str), japanese.ShiftJIS.NewDecoder())
 }
 
-func startWalker(q chan string, stdout chan string, wg *sync.WaitGroup, cmd string, args []string, isCwd bool) {
+func execCmd(q chan string, stdout chan string, wg *sync.WaitGroup, cmd string, args []string, isCwd bool) {
 	defer wg.Done()
 
 	for path := range q {
@@ -44,8 +44,7 @@ func startWalker(q chan string, stdout chan string, wg *sync.WaitGroup, cmd stri
 		stdout <- fmt.Sprintf("start %s: %s", time.Now().Format("15:04:05"), path)
 		prefix := filepath.Base(path)
 
-		execCmd := exec.Command(cmd, arg...)
-		out, err := execCmd.CombinedOutput()
+		out, err := exec.Command(cmd, arg...).CombinedOutput()
 		if err != nil {
 			// err だと out が空になるわけではなかった。
 			stdout <- fmt.Sprintf("%s: %s", prefix, fromShiftJIS(string(out)))
@@ -180,7 +179,7 @@ func main() {
 	q := make(chan string, 100)
 	for i := 0; i < parallel; i++ {
 		wg.Add(1)
-		go startWalker(q, stdout, wg, cmd, args, isCwd)
+		go execCmd(q, stdout, wg, cmd, args, isCwd)
 	}
 
 	queue(q, paths, exts, isRecursive, isDir)
