@@ -149,13 +149,19 @@ func main() {
 	)
 	flag.IntVar(&parallel, "P", 2, "同時実行数")
 	flag.BoolVar(&isRecursive, "r", false, "path のディレクトリを辿ってファイルを対象とする。")
-	flag.StringVar(&extsStr, "e", "", "-r を指定した場合に処理対象のファイル拡張子を指定。, で複数指定（スペースは挟まない）。例: -e png,jpg")
-	flag.BoolVar(&isDir, "d", false, "-r を指定した場合にディレクトリを処理対象とする。")
+	flag.StringVar(&extsStr, "e", "", "-r を指定した場合に処理対象のファイル拡張子を指定。, で複数指定（スペースは挟まない）。 -d との併用不可。例: -e png,jpg")
+	flag.BoolVar(&isDir, "d", false, "ディレクトリを処理対象とする。 -e との併用不可。")
 	flag.BoolVar(&isCwd, "c", false, "-r と -d を指定した場合に見つけたディレクトリをカレントディレクトリとして処理を実行する。")
+	// TODO: オプションの整合性確認
+	// -r, -d なし -c の処理がうまくいかないのでは？
 
 	flag.Parse()
 
 	if flag.NArg() < 3 {
+		flag.Usage()
+		os.Exit(1)
+	}
+	if isDir && extsStr != "" {
 		flag.Usage()
 		os.Exit(1)
 	}
