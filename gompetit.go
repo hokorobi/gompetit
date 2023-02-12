@@ -87,7 +87,14 @@ func execWalkFuncDir(q chan string) filepath.WalkFunc {
 	}
 }
 
-func queueRecursive(q chan string, dirs []string, exts []string, isDir bool) {
+func queue(q chan string, dirs []string, exts []string, isRecursive bool, isDir bool) {
+	if isRecursive {
+		for _, path := range dirs {
+			q <- path
+		}
+		return
+	}
+
 	var err error
 	for _, dir := range dirs {
 		if isDir {
@@ -98,12 +105,6 @@ func queueRecursive(q chan string, dirs []string, exts []string, isDir bool) {
 		if err != nil {
 			fmt.Println(err)
 		}
-	}
-}
-
-func queuePath(q chan string, paths []string) {
-	for _, path := range paths {
-		q <- path
 	}
 }
 
@@ -182,11 +183,7 @@ func main() {
 		go startWalker(q, stdout, wg, cmd, args, isCwd)
 	}
 
-	if isRecursive {
-		queueRecursive(q, paths, exts, isDir)
-	} else {
-		queuePath(q, paths)
-	}
+	queue(q, paths, exts, isRecursive, isDir)
 	close(q)
 	wg.Wait()
 
