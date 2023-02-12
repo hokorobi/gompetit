@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"golang.org/x/text/encoding/japanese"
 	"golang.org/x/text/transform"
@@ -40,7 +41,7 @@ func startWalker(q chan string, stdout chan string, wg *sync.WaitGroup, cmd stri
 			arg = append(args, path)
 		}
 
-		stdout <- fmt.Sprintf("start: %s", path)
+		stdout <- fmt.Sprintf("start %s: %s", time.Now().Format("15:04:05"), path)
 		prefix := filepath.Base(path)
 
 		execCmd := exec.Command(cmd, arg...)
@@ -52,7 +53,7 @@ func startWalker(q chan string, stdout chan string, wg *sync.WaitGroup, cmd stri
 		} else {
 			stdout <- fmt.Sprintf("%s: %s", prefix, fromShiftJIS(string(out)))
 		}
-		stdout <- fmt.Sprintf("done: %s", path)
+		stdout <- fmt.Sprintf("done %s: %s", time.Now().Format("15:04:05"), path)
 	}
 }
 
