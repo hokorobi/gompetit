@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
-	"time"
 
 	"golang.org/x/text/encoding/japanese"
 	"golang.org/x/text/transform"
@@ -25,7 +25,7 @@ func fromShiftJIS(str string) string {
 	return transformEncoding(strings.NewReader(str), japanese.ShiftJIS.NewDecoder())
 }
 
-func execCmd(q chan string, stdout chan string, wg *sync.WaitGroup, cmd string, args []string, isCwd bool) {
+func execCmd(q chan string, wg *sync.WaitGroup, cmd string, args []string, isCwd bool) {
 	defer wg.Done()
 
 	for path := range q {
@@ -33,7 +33,7 @@ func execCmd(q chan string, stdout chan string, wg *sync.WaitGroup, cmd string, 
 		if isCwd {
 			err := os.Chdir(path)
 			if err != nil {
-				stdout <- fmt.Sprintf("%v", err)
+				PrintLog(fmt.Sprintf("%v", err))
 				continue
 			}
 			arg = args
@@ -41,18 +41,18 @@ func execCmd(q chan string, stdout chan string, wg *sync.WaitGroup, cmd string, 
 			arg = append(args, path)
 		}
 
-		stdout <- fmt.Sprintf("start %s: %s", time.Now().Format("15:04:05"), path)
+		PrintLog(fmt.Sprintf("start: %s", path))
 		prefix := filepath.Base(path)
 
 		out, err := exec.Command(cmd, arg...).CombinedOutput()
 		if err != nil {
 			// err だと out が空になるわけではなかった。
-			stdout <- fmt.Sprintf("%s: %v", prefix, err)
+			PrintLog(fmt.Sprintf("%s: %v", prefix, err))
 		}
 		if len(out) > 0 {
-			stdout <- fmt.Sprintf("%s: %s", prefix, fromShiftJIS(string(out)))
+			PrintLog(fmt.Sprintf("%s: %s", prefix, fromShiftJIS(string(out))))
 		}
-		stdout <- fmt.Sprintf("done %s: %s", time.Now().Format("15:04:05"), path)
+		PrintLog(fmt.Sprintf("done: %s", path))
 	}
 }
 
@@ -168,26 +168,33 @@ func main() {
 	exts := getExts(extsStr)
 	paths := getPaths(flag.Args()[2:])
 
-	stdout := make(chan string, 100)
-	go func() {
-		for str := range stdout {
-			fmt.Println(str)
-		}
-	}()
-
 	wg := new(sync.WaitGroup)
 	q := make(chan string, 100)
 	for i := 0; i < parallel; i++ {
 		wg.Add(1)
-		go execCmd(q, stdout, wg, cmd, args, isCwd)
+		go execCmd(q, wg, cmd, args, isCwd)
 	}
 
 	queue(q, paths, exts, isRecursive, isDir)
 	close(q)
 	wg.Wait()
+}
 
-	// FIXME: 最後の stdout への出力が捨てられてしまう。
-	// stdout から取得する前に close している？
-	time.Sleep(time.Second * 1)
-	close(stdout)
+func getFileNameWithoutExt(path string) string {
+	return filepath.Base(path[:len(path)-len(filepath.Ext(path))])
+}
+func getFilename(ext string) string {
+	exec, _ := os.Executable()
+	return filepath.Join(filepath.Dir(exec), getFileNameWithoutExt(exec)+ext)
+}
+func PrintLog(m interface{}) {
+	f, err := os.OpenFile(getFilename(".log"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
+	if err != nil {
+		panic("Cannot open log file:" + err.Error())
+	}
+	defer f.Close()
+
+	log.SetOutput(f)
+	log.SetFlags(log.Ldate | log.Ltime)
+	log.Println(m)
 }
