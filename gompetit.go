@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/go-toast/toast"
 	"golang.org/x/text/encoding/japanese"
 	"golang.org/x/text/transform"
 )
@@ -144,12 +145,14 @@ func main() {
 		extsStr     string
 		isDir       bool
 		isCwd       bool
+		isNotify    bool
 	)
 	flag.IntVar(&parallel, "P", 2, "同時実行数")
 	flag.BoolVar(&isRecursive, "r", false, "path のディレクトリを辿ってファイルを対象とする。")
 	flag.StringVar(&extsStr, "e", "", "-r を指定した場合に処理対象のファイル拡張子を指定。, で複数指定（スペースは挟まない）。 -d との併用不可。例: -e png,jpg")
 	flag.BoolVar(&isDir, "d", false, "ディレクトリを処理対象とする。 -e との併用不可。")
 	flag.BoolVar(&isCwd, "c", false, "-r と -d を指定した場合に見つけたディレクトリをカレントディレクトリとして処理を実行する。")
+	flag.BoolVar(&isNotify, "n", false, "処理完了後に通知する。")
 	// TODO: オプションの整合性確認
 	// -r, -d なし -c の処理がうまくいかないのでは？
 
@@ -168,6 +171,10 @@ func main() {
 	exts := getExts(extsStr)
 	paths := getPaths(flag.Args()[2:])
 
+	if isNotify {
+		defer notify(cmd, args)
+	}
+
 	wg := new(sync.WaitGroup)
 	q := make(chan string, 100)
 	for i := 0; i < parallel; i++ {
@@ -178,6 +185,18 @@ func main() {
 	queue(q, paths, exts, isRecursive, isDir)
 	close(q)
 	wg.Wait()
+}
+
+func notify(cmd string, args []string) {
+	notification := toast.Notification{
+		AppID:   "gompetit",
+		Title:   "Done",
+		Message: strings.Join(append([]string{cmd}, args...), " "),
+	}
+	err := notification.Push()
+	if err != nil {
+		PrintLog(fmt.Sprintf("%v", err))
+	}
 }
 
 func getFileNameWithoutExt(path string) string {
