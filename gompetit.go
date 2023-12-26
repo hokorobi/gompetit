@@ -30,20 +30,22 @@ func execCmd(q chan string, wg *sync.WaitGroup, cmd string, args []string, isCwd
 	for path := range q {
 		var arg []string
 		if isCwd {
-			err := os.Chdir(path)
-			if err != nil {
-				PrintLog(fmt.Sprintf("%v", err))
-				continue
-			}
 			arg = args
 		} else {
 			arg = append(args, path)
 		}
 
 		PrintLog(fmt.Sprintf("start: %s", path))
-		prefix := filepath.Base(path)
+		defer PrintLog(fmt.Sprintf("done: %s", path))
 
-		out, err := exec.Command(cmd, arg...).CombinedOutput()
+		command := exec.Command(cmd, arg...)
+		if isCwd {
+			// refer "Goメモ-198 (*exec.Cmd 実行時にワーキングディレクトリを指定する) - いろいろ備忘録日記" https://devlights.hatenablog.com/entry/2022/04/22/073000
+			command.Dir = path
+		}
+		out, err := command.CombinedOutput()
+
+		prefix := filepath.Base(path)
 		if err != nil {
 			// err だと out が空になるわけではなかった。
 			PrintLog(fmt.Sprintf("%s: %v", prefix, err))
@@ -51,7 +53,6 @@ func execCmd(q chan string, wg *sync.WaitGroup, cmd string, args []string, isCwd
 		if len(out) > 0 {
 			PrintLog(fmt.Sprintf("%s: %s", prefix, fromShiftJIS(string(out))))
 		}
-		PrintLog(fmt.Sprintf("done: %s", path))
 	}
 }
 
