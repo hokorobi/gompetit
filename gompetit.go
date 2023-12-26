@@ -4,7 +4,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"os"
 	"os/exec"
@@ -17,7 +16,7 @@ import (
 )
 
 func transformEncoding(rawReader io.Reader, trans transform.Transformer) string {
-	ret, _ := ioutil.ReadAll(transform.NewReader(rawReader, trans))
+	ret, _ := io.ReadAll(transform.NewReader(rawReader, trans))
 	return string(ret)
 }
 
